@@ -38,7 +38,6 @@
   <ItemGroup>
     <Compile Include="Grating_Connection.cs" />
     <Compile Include="StructuresData3.cs" />
-    <Compile Include="Grating_Connectio.cs" />
     <Compile Include="AssemblyInfo.cs" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
