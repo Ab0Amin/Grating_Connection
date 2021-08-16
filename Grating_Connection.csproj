@@ -31,6 +31,7 @@
     <WarningLevel>4</WarningLevel>
   </PropertyGroup>
   <ItemGroup>
+    <Reference Include="System" />
     <Reference Include="Tekla.Structures" />
     <Reference Include="Tekla.Structures.Model" />
     <Reference Include="Tekla.Structures.Plugins" />
@@ -39,6 +40,7 @@
     <Compile Include="Grating_Connection.cs" />
     <Compile Include="StructuresData3.cs" />
     <Compile Include="AssemblyInfo.cs" />
+    <Compile Include="test.cs" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>
