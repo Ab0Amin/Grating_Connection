@@ -8,5 +8,6 @@ namespace
 {
     class test
     {
+        FLDJKSNFLKDSNFLKDSN
     }
 }
