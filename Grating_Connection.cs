@@ -14,6 +14,7 @@ using Tekla.Structures.Model.Operations;
 using Tekla.Structures.Model.UI;
 using Tekla.Structures.Plugins;
 using Tekla.Structures.Solid;
+using System.Windows.Forms;
 
 [Plugin("Grating_Connection")]
 [PluginUserInterface(UserInterfaceDefinitions.Plugin3)]
@@ -85,7 +86,15 @@ public class Grating_Connection : PluginBase
             this.data.weld_belowline = 6.0;
         if (this.IsDefaultValue(this.data.holeType))
             this.data.holeType = 0;
-        this.createconnection((Part)this.myModel.SelectModelObject((Identifier)Input[0].GetInput()), (ArrayList)Input[1].GetInput());
+        try
+        {
+            this.createconnection((Part)this.myModel.SelectModelObject((Identifier)Input[0].GetInput()), (ArrayList)Input[1].GetInput());
+        }
+        catch (Exception e)
+        {
+            
+            MessageBox.Show(e.ToString());
+        }
         return true;
     }
 
@@ -95,12 +104,13 @@ public class Grating_Connection : PluginBase
         {
             Part part1 = main;
             Part part2 = (Part)this.myModel.SelectModelObject(secondry);
+         
             List<Beam> beamList = new List<Beam>();
-            this.myModel.GetWorkPlaneHandler().SetCurrentTransformationPlane(new TransformationPlane(part1.GetCoordinateSystem()));
-            Tekla.Structures.Model.Solid solid1 = part1.GetSolid();
+            myModel.GetWorkPlaneHandler().SetCurrentTransformationPlane(new TransformationPlane(part1.GetCoordinateSystem()));
+            Solid solid1 = part1.GetSolid();
             Point maximumPoint = solid1.MaximumPoint;
             Point minimumPoint = solid1.MinimumPoint;
-            Tekla.Structures.Model.Solid solid2 = part2.GetSolid();
+            Solid solid2 = part2.GetSolid();
             double num = 0.0;
             Type type = part1.GetType();
             if (type.Name == "Beam")
@@ -108,7 +118,7 @@ public class Grating_Connection : PluginBase
             else if (type.Name == "ContourPlate")
                 num = solid2.MaximumPoint.Y;
             Assembly assembly = part2.GetAssembly();
-            assembly.SetMainPart(part2);
+            //assembly.SetMainPart(part2);
             ArrayList secondaries = assembly.GetSecondaries();
             Point point1 = new Point();
             Point point2 = new Point();
@@ -128,25 +138,90 @@ public class Grating_Connection : PluginBase
                 point3 = new Point(minimumPoint.X + this.data.negative_Y * -1.0 - this.data.Plate_h, num, minimumPoint.Z + this.data.positive_X * -1.0 - this.data.Plate_h);
                 point4 = new Point(minimumPoint.X + this.data.negative_Y * -1.0 - this.data.Plate_h, num, maximumPoint.Z + this.data.negative_X + this.data.Plate_h);
             }
+
+            ContourPlate cut = this.CreateCut(point1, point2, point3, point4, part2);
             for (int index = 0; index < secondaries.Count; ++index)
             {
+                Part Part_To_Be_Cut = (Part)secondaries[index];
+
                 if (secondaries[index].GetType().Name == "PolyBeam")
                 {
-                    secondaries.RemoveAt(secondaries.IndexOf(secondaries[index]));
+                    secondaries.Remove(Part_To_Be_Cut);
                     if (index >= 0)
                     {
                         --index;
                         continue;
                     }
-                    if (secondaries.Count == 0)
-                        break;
+                    else if (secondaries.Count == 0)
+                    {
+                        index = -1;
+                        continue;
+                    }
                 }
-                Part Part_To_Be_Cut = (Part)secondaries[index];
-                if (Part_To_Be_Cut.Class != "211")
+
+                else if (Part_To_Be_Cut.Class == "2222")
+                {
+                    secondaries.Remove(Part_To_Be_Cut);
+                    if (index >= 0)
+                    {
+                        --index;
+                        continue;
+                    }
+                    else if (secondaries.Count == 0)
+                    {
+                        index = -1;
+                        continue;
+                    }
+                   
+                }
+                
+                if (Part_To_Be_Cut.Class != "211" && Part_To_Be_Cut.Profile.ProfileString.Contains("PL"))
+                {
+                    // split into two side plates 
+                    
                     this.CreateCut(point1, point2, point3, point4, Part_To_Be_Cut).Delete();
-            }
-            ContourPlate cut = this.CreateCut(point1, point2, point3, point4, part2);
-            OBB obb1 = new OBB();
+                    //oldSidePlates.Add((Beam)Part_To_Be_Cut);
+                    bool intersected = checkIntersectionSidePlates(cut, Part_To_Be_Cut);
+                   
+
+                    if (intersected)
+                    {
+                        int factor = 1;
+                        CutPlane cut1 = cutsideplate(point1, Part_To_Be_Cut, factor);
+                        double length = 100;
+                        Part_To_Be_Cut.GetReportProperty("LENGTH_NET", ref length);
+                        if (length < 1)
+                        {
+                            factor = -1;
+                            cut1.Delete();
+                            cut1 = cutsideplate(point1, Part_To_Be_Cut, factor);
+                            
+                        }
+                        Beam partToCutBeam = secondaries[index] as Beam;
+                        Beam SecSidePlate = copyBeam(partToCutBeam);
+                        insert_weld(part2, SecSidePlate);
+                        CutPlane cut2 = cutsideplate(point1, SecSidePlate, -1 * factor);
+                        double length1 = 100;
+                        SecSidePlate.GetReportProperty("LENGTH_NET", ref length1);
+                        if (length1 < 1)
+                        {
+                            SecSidePlate.Delete();
+                        }
+                        else
+                        {
+                            CreateCut(point1, point2, point3, point4, SecSidePlate).Delete();
+                        }
+                    }
+                   
+                }
+                     }
+
+            // split reget sec parts
+
+             assembly = part2.GetAssembly();
+             secondaries = assembly.GetSecondaries();
+
+            // insert toe plates around grating
             OBB obb2 = this.CreateObb((Part)cut);
             foreach (LineSegment lineSegment in this.Get_Lower_face_edge(part2))
             {
@@ -165,6 +240,8 @@ public class Grating_Connection : PluginBase
                 }
             }
             cut.Delete();
+
+            // cut part by part toe plates
             for (int index = 0; index < beamList.Count; ++index)
             {
                 try
@@ -182,17 +259,22 @@ public class Grating_Connection : PluginBase
             catch (Exception)
             {
             }
+
+            // remove toe plates from sec parts
             for (int index = 0; index < secondaries.Count; ++index)
             {
-                if (secondaries[index] is Beam beam && beam.Class == "211")
+                 Beam beam = secondaries[index] as Beam;
+                if ( beam != null && beam.Class == "211")
                 {
                     secondaries.Remove((object)beam);
                     index = -1;
                 }
             }
+            // insert small toeplates
             foreach (Part GPart in secondaries)
             {
-                foreach (LineSegment lineSegment in this.Get_Lower_face_edge(GPart))
+                List<LineSegment> lowerlines = Get_Lower_face_edge(GPart);
+                foreach (LineSegment lineSegment in lowerlines)
                 {
                     if (obb2.Intersects(lineSegment))
                     {
@@ -208,6 +290,8 @@ public class Grating_Connection : PluginBase
                     }
                 }
             }
+
+            // compine toeplates
             for (int index1 = 0; index1 <= beamList.Count - 1; ++index1)
             {
                 Beam beam1 = beamList[index1];
@@ -217,6 +301,59 @@ public class Grating_Connection : PluginBase
                     this.combine_beams_have_same_vector((Part)beam1, (Part)beam2);
                 }
             }
+            beamList.Clear();
+
+           
+        }
+    }
+
+    private static Beam copyBeam(Beam partToCutBeam)
+    {
+        Beam SecSidePlate = new Beam();
+        SecSidePlate.Profile = partToCutBeam.Profile;
+        SecSidePlate.Material = partToCutBeam.Material;
+        SecSidePlate.Position = partToCutBeam.Position;
+        SecSidePlate.AssemblyNumber = partToCutBeam.AssemblyNumber;
+        SecSidePlate.PartNumber = partToCutBeam.PartNumber;
+        SecSidePlate.StartPoint = partToCutBeam.StartPoint;
+        SecSidePlate.EndPoint = partToCutBeam.EndPoint;
+        SecSidePlate.Class = "2222";
+        SecSidePlate.Insert();
+        return SecSidePlate;
+    }
+
+    private static CutPlane cutsideplate(Point point1, Part Part_To_Be_Cut, int factor)
+    {
+        CoordinateSystem coordinate = Part_To_Be_Cut.GetCoordinateSystem();
+        Vector vecX = coordinate.AxisX;
+        Vector vecY = coordinate.AxisY;
+        Vector vecZ = vecY.Cross(vecX);
+        vecZ.Normalize();
+        vecX.Normalize();
+        vecY.Normalize();
+        CutPlane cutlinePlane = new CutPlane();
+        cutlinePlane.Plane = new Plane();
+        cutlinePlane.Plane.Origin = point1;
+        cutlinePlane.Plane.AxisX = vecY * factor;
+        cutlinePlane.Plane.AxisY = vecZ;
+        cutlinePlane.Father = Part_To_Be_Cut;
+        cutlinePlane.Insert();
+        return cutlinePlane;
+    }
+
+    private static bool checkIntersectionSidePlates(ContourPlate cut, Part Part_To_Be_Cut)
+    {
+        Solid cutSplid = cut.GetSolid();
+        ArrayList ppts = Part_To_Be_Cut.GetCenterLine(false);
+        LineSegment ll = new LineSegment(ppts[0] as Point, ppts[1] as Point);
+        ArrayList intersectedppts = cutSplid.Intersect(ll);
+        if (intersectedppts.Count > 0)
+        {
+            return true; 
+        }
+        else
+        {
+            return false;
         }
     }
 
@@ -317,11 +454,14 @@ public class Grating_Connection : PluginBase
     public List<LineSegment> Get_Lower_face_edge(Part GPart)
     {
         this.myModel.GetWorkPlaneHandler().SetCurrentTransformationPlane(new TransformationPlane());
-        Tekla.Structures.Model.Solid solid = GPart.GetSolid();
-        EdgeEnumerator edgeEnumerator = solid.GetEdgeEnumerator();
+        Solid solid = GPart.GetSolid(Solid.SolidCreationTypeEnum.NORMAL);
+        //GPart.Class = "2";
+        //GPart.Modify();
         List<LineSegment> lineSegmentList = new List<LineSegment>();
         if (solid != null)
         {
+            EdgeEnumerator edgeEnumerator = solid.GetEdgeEnumerator();
+   
             while (edgeEnumerator.MoveNext())
             {
                 Edge current = edgeEnumerator.Current as Edge;
