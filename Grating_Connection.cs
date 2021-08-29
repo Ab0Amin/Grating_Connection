@@ -622,7 +622,7 @@ public class Grating_Connection : PluginBase
         weld.SecondaryObject = (ModelObject)Secandary_part;
         weld.SizeAbove = this.data.weld_aboveline;
         weld.TypeAbove = BaseWeld.WeldTypeEnum.WELD_TYPE_FILLET;
-        weld.SizeBelow = this.data.weld_aboveline;
+        weld.SizeBelow = this.data.weld_belowline;
         weld.TypeBelow = BaseWeld.WeldTypeEnum.WELD_TYPE_FILLET;
         weld.ShopWeld = true;
         weld.AroundWeld = false;
